@@ -170,12 +170,73 @@ FactualCorrectness   response ↔ reference        Generator     사실적으로
 
 RAGAS 평가에 필요한 데이터 필드:
 
-| 필드 | 설명 | 필요한 메트릭 |
-|---|---|---|
-| `user_input` | 사용자 질문 | 전부 |
-| `response` | RAG가 생성한 답변 | Faithfulness, Relevancy, Factual Correctness |
-| `retrieved_contexts` | 검색된 문서 리스트 | Faithfulness, Context Precision/Recall |
-| `reference` | 정답 (ground truth) | Context Recall, Factual Correctness |
+| 필드 | 설명 | 누가 만드는가 | 필요한 메트릭 |
+|---|---|---|---|
+| `user_input` | 사용자 질문 | 사용자 또는 테스트셋 생성기 | 전부 |
+| `response` | RAG가 생성한 답변 | **RAG 시스템 (Generator)** | Faithfulness, Relevancy, Factual Correctness |
+| `retrieved_contexts` | 검색된 문서 리스트 | **RAG 시스템 (Retriever)** | Faithfulness, Context Precision/Recall |
+| `reference` | 정답 (ground truth) | 사람 또는 테스트셋 생성기 | Context Recall, Factual Correctness |
+
+### 평가 워크플로우
+
+RAGAS 평가는 "시험 문제 준비 → 학생이 시험 → 채점"의 흐름입니다.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Step 1. 테스트셋 준비 (시험 문제지 + 정답지)                    │
+│                                                             │
+│  TestsetGenerator 또는 사람이 직접 작성                         │
+│    → user_input (질문)        ✅                              │
+│    → reference (모범답안)      ✅                              │
+│    → response                 ❌ 아직 비어있음                  │
+│    → retrieved_contexts       ❌ 아직 비어있음                  │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 2. RAG 시스템 실행 (학생이 시험을 봄)                      │
+│                                                             │
+│  각 질문을 내 RAG 시스템에 넣어서 출력 수집                       │
+│    user_input ──→ Retriever ──→ retrieved_contexts  ✅        │
+│                        └──→ Generator ──→ response  ✅        │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Step 3. RAGAS 평가 (채점)                                    │
+│                                                             │
+│  4개 필드가 모두 채워진 상태에서 메트릭 계산                       │
+│    Faithfulness:      response ↔ retrieved_contexts          │
+│    ResponseRelevancy: response ↔ user_input                  │
+│    LLMContextRecall:  reference ↔ retrieved_contexts         │
+│    FactualCorrectness: response ↔ reference                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+코드로 보면:
+
+```python
+# Step 1: 테스트셋에서 질문과 모범답안을 가져옴
+testset_df = pd.read_csv("generated_testset.csv")
+
+# Step 2: 각 질문을 내 RAG 시스템에 넣어서 나머지 필드를 채움
+eval_data = []
+for _, row in testset_df.iterrows():
+    question = row["user_input"]
+    retrieved_contexts = my_retriever.search(question)   # ← 내 검색기
+    response = my_llm.generate(question, retrieved_contexts)  # ← 내 LLM
+
+    eval_data.append({
+        "user_input": question,
+        "reference": row["reference"],       # ← 테스트셋에서
+        "retrieved_contexts": retrieved_contexts,  # ← 내 RAG에서
+        "response": response,                # ← 내 RAG에서
+    })
+
+# Step 3: RAGAS 평가
+dataset = EvaluationDataset.from_list(eval_data)
+result = evaluate(dataset=dataset, metrics=[...], llm=llm, embeddings=emb)
+```
 
 ### LLM 설정
 
