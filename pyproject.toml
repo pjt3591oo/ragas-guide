@@ -1,0 +1,13 @@
+[project]
+name = "ragas-study"
+version = "0.1.0"
+description = "RAGAS 학습 프로젝트 — RAG 파이프라인 평가 및 테스트 데이터 생성"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ragas>=0.4",
+    "langchain-community>=0.2",
+    "langchain-openai>=0.1",
+    "openai>=1.0",
+    "python-dotenv>=1.0",
+]
