@@ -5,17 +5,10 @@
 수동으로 평가 데이터를 만들 필요 없이 RAG 시스템을 테스트할 수 있습니다.
 """
 
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from ragas.testset import TestsetGenerator
 from llm_config import get_llm, get_embeddings
 
-# ── Ollama (로컬 LLM) 설정 ────────────────────────────────
 generator_llm = get_llm()
 generator_embeddings = get_embeddings()
 

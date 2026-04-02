@@ -5,12 +5,6 @@
 실제 RAG 시스템을 평가하는 전형적인 워크플로우입니다.
 """
 
-import os
-
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from ragas import evaluate, EvaluationDataset
 from ragas.metrics import (
     Faithfulness,
@@ -20,7 +14,6 @@ from ragas.metrics import (
 )
 from llm_config import get_llm, get_embeddings
 
-# ── Ollama (로컬 LLM) 설정 ────────────────────────────────
 evaluator_llm = get_llm()
 evaluator_embeddings = get_embeddings()
 
