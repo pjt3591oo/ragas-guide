@@ -5,11 +5,11 @@
 실제 RAG 시스템을 평가하는 전형적인 워크플로우입니다.
 """
 
-from ragas import evaluate, EvaluationDataset
-from ragas.metrics import (
+import pandas as pd
+from ragas.metrics.collections import (
     Faithfulness,
-    ResponseRelevancy,
-    LLMContextRecall,
+    AnswerRelevancy,
+    ContextRecall,
     FactualCorrectness,
 )
 from llm_config import get_llm, get_embeddings
@@ -80,7 +80,21 @@ eval_data = [
     },
 ]
 
-dataset = EvaluationDataset.from_list(eval_data)
+
+# ── 각 메트릭이 필요로 하는 인자 매핑 ──────────────────────
+# 메트릭마다 ascore()에 전달해야 하는 필드가 다릅니다.
+METRIC_ARGS = {
+    "Faithfulness": ("user_input", "response", "retrieved_contexts"),
+    "AnswerRelevancy": ("user_input", "response"),
+    "ContextRecall": ("user_input", "retrieved_contexts", "reference"),
+    "FactualCorrectness": ("response", "reference"),
+}
+
+
+def build_inputs(metric_name: str, data: list[dict]) -> list[dict]:
+    """메트릭에 필요한 필드만 추출하여 batch_score 입력을 만듭니다."""
+    keys = METRIC_ARGS[metric_name]
+    return [{k: sample[k] for k in keys} for sample in data]
 
 
 def main():
@@ -88,27 +102,39 @@ def main():
     print("RAGAS 전체 평가 파이프라인")
     print("=" * 60)
 
-    result = evaluate(
-        dataset=dataset,
-        metrics=[
-            Faithfulness(),
-            ResponseRelevancy(),
-            LLMContextRecall(),
-            FactualCorrectness(),
-        ],
-        llm=evaluator_llm,
-        embeddings=evaluator_embeddings,
-    )
+    metrics = {
+        "Faithfulness": Faithfulness(llm=evaluator_llm),
+        "AnswerRelevancy": AnswerRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings),
+        "ContextRecall": ContextRecall(llm=evaluator_llm),
+        "FactualCorrectness": FactualCorrectness(llm=evaluator_llm),
+    }
+
+    # ── 메트릭별 batch 평가 ──
+    results = {}
+    for name, metric in metrics.items():
+        inputs = build_inputs(name, eval_data)
+        scores = metric.batch_score(inputs)
+        results[name] = [float(s) for s in scores]
+        print(f"  ✅ {name} 완료")
+
+    # ── DataFrame 구성 ──
+    df = pd.DataFrame({
+        "user_input": [d["user_input"] for d in eval_data],
+        "faithfulness": results["Faithfulness"],
+        "answer_relevancy": results["AnswerRelevancy"],
+        "context_recall": results["ContextRecall"],
+        "factual_correctness": results["FactualCorrectness"],
+    })
 
     # ── 전체 점수 요약 ──
+    metric_cols = ["faithfulness", "answer_relevancy", "context_recall", "factual_correctness"]
     print("\n📊 전체 평균 점수:")
-    print(result)
+    for col in metric_cols:
+        print(f"  {col:25s} = {df[col].mean():.4f}")
 
     # ── 샘플별 상세 결과 ──
-    df = result.to_pandas()
     print("\n📋 샘플별 상세 결과:")
-    metric_cols = [c for c in df.columns if c not in ("user_input", "retrieved_contexts", "response", "reference")]
-    print(df[["user_input"] + metric_cols].to_string(index=False))
+    print(df.to_string(index=False))
 
     # ── 문제 있는 샘플 식별 ──
     print("\n⚠️  Faithfulness < 0.5인 샘플 (환각 의심):")
