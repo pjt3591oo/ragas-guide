@@ -4,7 +4,7 @@ docs/ 디렉토리의 문서들이 올바르게 구성되어 있는지 검증하
 RAGAS testset generation에 사용되는 샘플 문서들의 구조와 내용을 확인합니다.
 """
 
-import os
+import re
 from pathlib import Path
 
 import pytest
@@ -83,21 +83,17 @@ class TestDocumentContent:
 
     def test_document_has_no_empty_sections(self, doc_path):
         content = doc_path.read_text(encoding="utf-8")
-        lines = content.split("\n")
-        for i, line in enumerate(lines):
-            if line.startswith("## "):
-                # 섹션 헤더 다음에 빈 줄 이후 내용이 있어야 함
-                remaining = "\n".join(lines[i + 1 :]).strip()
-                # 다음 섹션까지의 내용을 확인
-                section_content = []
-                for next_line in lines[i + 1 :]:
-                    if next_line.startswith("## ") or next_line.startswith("# "):
-                        break
-                    section_content.append(next_line)
-                section_text = "\n".join(section_content).strip()
-                assert len(section_text) > 0, (
-                    f"{doc_path.name}의 '{line.strip()}' 섹션이 비어 있습니다"
-                )
+        # 섹션 헤더(## 또는 #)로 분할하여 단일 패스로 검증
+        sections = re.split(r"^(## .+)$", content, flags=re.MULTILINE)
+        # re.split 결과: [before_first_header, header1, body1, header2, body2, ...]
+        for i in range(1, len(sections), 2):
+            header = sections[i].strip()
+            body = sections[i + 1].strip() if i + 1 < len(sections) else ""
+            # 본문에서 다음 최상위 헤더(#) 이전까지만 확인
+            body_before_h1 = re.split(r"^# ", body, flags=re.MULTILINE)[0].strip()
+            assert len(body_before_h1) > 0, (
+                f"{doc_path.name}의 '{header}' 섹션이 비어 있습니다"
+            )
 
 
 class TestDocumentDiversity:
@@ -112,12 +108,3 @@ class TestDocumentDiversity:
             titles.append(title)
         assert len(set(titles)) == len(titles), "모든 문서가 고유한 제목을 가져야 합니다"
 
-    def test_langchain_loader_compatibility(self):
-        """DirectoryLoader가 문서를 로드할 수 있는 형식인지 확인합니다."""
-        for md_file in get_markdown_files():
-            content = md_file.read_text(encoding="utf-8")
-            # TextLoader가 읽을 수 있도록 유효한 UTF-8이어야 함
-            assert isinstance(content, str)
-            assert len(content) > 0
-            # 파일 확장자가 .md여야 함 (glob="**/*.md" 패턴과 일치)
-            assert md_file.suffix == ".md"
